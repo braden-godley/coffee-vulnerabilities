@@ -11,23 +11,33 @@ import (
 
 type CVEResponse struct {
     TotalResults int `json:"totalResults"`
-    Vulnerabilities []struct {
-        Cve struct {
-            Id string `json:"id"`
-            Published string `json:"published"`
-            Descriptions []struct {
-                Lang string `json:"lang"`
-                Value string `json:"value"`
-            } `json:"descriptions"`
-            Metrics struct {
-                CvssMetricV31 []struct {
-                    CvssData struct {
-                        BaseScore float32 `json:"baseScore"`
-                    } `json:"cvssData"`
-                } `json:"cvssMetricV31"`
-            } `json:"metrics"`
-        } `json:"cve"`
-    } `json:"vulnerabilities"`
+    Vulnerabilities []Vulnerability `json:"vulnerabilities"`
+}
+
+type Vulnerability struct {
+    Cve struct {
+        Id string `json:"id"`
+        Published string `json:"published"`
+        Descriptions []struct {
+            Lang string `json:"lang"`
+            Value string `json:"value"`
+        } `json:"descriptions"`
+        Metrics struct {
+            CvssMetricV31 []struct {
+                CvssData CvssData `json:"cvssData"`
+            } `json:"cvssMetricV31"`
+            CvssMetricV40 []struct {
+                CvssData CvssData `json:"cvssData"`
+            } `json:"cvssMetricV40"`
+            CvssMetricV2 []struct {
+                CvssData CvssData `json:"cvssData"`
+            } `json:"cvssMetricV2"`
+        } `json:"metrics"`
+    } `json:"cve"`
+}
+
+type CvssData struct {
+    BaseScore float64 `json:"baseScore"`
 }
 
 func main() {
@@ -63,7 +73,10 @@ func getVulnerabilities() (*CVEResponse, error) {
 
     log.Printf("Getting %v", url)
 
-    resp, err := http.Get(url)
+    client := &http.Client {
+        Timeout: 10 * time.Second,
+    }
+    resp, err := client.Get(url)
     if err != nil {
         return nil, err
     }
@@ -81,7 +94,23 @@ func getVulnerabilities() (*CVEResponse, error) {
         return nil, err
     }
 
-    // log.Printf("Decoded: %+v\n", response)
-
     return &response, nil
 }
+
+func (v Vulnerability) getBaseScore() float64 {
+    metrics := v.Cve.Metrics
+    if len(metrics.CvssMetricV40) > 0 {
+        return metrics.CvssMetricV40[0].CvssData.BaseScore
+    }
+
+    if len(metrics.CvssMetricV31) > 0 {
+        return metrics.CvssMetricV31[0].CvssData.BaseScore
+    }
+
+    if len(metrics.CvssMetricV2) > 0 {
+        return metrics.CvssMetricV2[0].CvssData.BaseScore
+    }
+
+    return 0
+}
+
