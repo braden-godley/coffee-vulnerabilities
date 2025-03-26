@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"time"
+    "github.com/samber/lo"
 )
 
 const ScoreThreshold = 9.0
@@ -53,14 +54,11 @@ func main() {
 
 	log.Printf("Received %d CVEs", len(vulns.Vulnerabilities))
 
-	totalMatches := 0
+    critical := lo.Filter(vulns.Vulnerabilities, func(v Vulnerability, _ int) bool {
+        return v.getBaseScore() > ScoreThreshold
+    })
 
-	for _, v := range vulns.Vulnerabilities {
-		// Skip vulns that don't meet the threshold
-		if score := v.getBaseScore(); score < ScoreThreshold {
-			continue
-		}
-
+	for _, v := range critical {
 		log.Printf("Id: %s", v.Cve.Id)
 		for _, desc := range v.Cve.Descriptions {
 			if desc.Lang == "en" {
@@ -71,11 +69,9 @@ func main() {
 			log.Printf("Base score: %f", data.CvssData.BaseScore)
 		}
 		log.Println("")
-
-		totalMatches += 1
 	}
 
-	log.Printf("Found %d/%d CVEs with score at least %f", totalMatches, len(vulns.Vulnerabilities), ScoreThreshold)
+	log.Printf("Found %d/%d CVEs with score at least %f", len(critical), len(vulns.Vulnerabilities), ScoreThreshold)
 }
 
 func getVulnerabilities() (*CVEResponse, error) {
@@ -126,3 +122,4 @@ func (v Vulnerability) getBaseScore() float64 {
 
 	return 0
 }
+
