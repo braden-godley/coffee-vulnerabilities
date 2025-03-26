@@ -7,7 +7,8 @@ import (
 	"log"
 	"net/http"
 	"time"
-    "github.com/samber/lo"
+
+	"github.com/samber/lo"
 )
 
 const ScoreThreshold = 9.0
@@ -19,13 +20,10 @@ type CVEResponse struct {
 
 type Vulnerability struct {
 	Cve struct {
-		Id           string `json:"id"`
-		Published    string `json:"published"`
-		Descriptions []struct {
-			Lang  string `json:"lang"`
-			Value string `json:"value"`
-		} `json:"descriptions"`
-		Metrics struct {
+		Id           string        `json:"id"`
+		Published    string        `json:"published"`
+		Descriptions []Description `json:"descriptions"`
+		Metrics      struct {
 			CvssMetricV31 []struct {
 				CvssData CvssData `json:"cvssData"`
 			} `json:"cvssMetricV31"`
@@ -43,6 +41,11 @@ type CvssData struct {
 	BaseScore float64 `json:"baseScore"`
 }
 
+type Description struct {
+	Lang  string `json:"lang"`
+	Value string `json:"value"`
+}
+
 func main() {
 	log.SetPrefix("coffee: ")
 	log.SetFlags(0)
@@ -54,19 +57,16 @@ func main() {
 
 	log.Printf("Received %d CVEs", len(vulns.Vulnerabilities))
 
-    critical := lo.Filter(vulns.Vulnerabilities, func(v Vulnerability, _ int) bool {
-        return v.getBaseScore() > ScoreThreshold
-    })
+	critical := lo.Filter(vulns.Vulnerabilities, func(v Vulnerability, _ int) bool {
+		return v.getBaseScore() > ScoreThreshold
+	})
 
 	for _, v := range critical {
 		log.Printf("Id: %s", v.Cve.Id)
-		for _, desc := range v.Cve.Descriptions {
-			if desc.Lang == "en" {
-				log.Printf("Description: %s", desc.Value)
-			}
-		}
-		for _, data := range v.Cve.Metrics.CvssMetricV31 {
-			log.Printf("Base score: %f", data.CvssData.BaseScore)
+		if desc, ok := lo.Find(v.Cve.Descriptions, func(desc Description) bool {
+			return desc.Lang == "en"
+		}); ok {
+			log.Printf("Description: %s", desc.Value)
 		}
 		log.Println("")
 	}
@@ -122,4 +122,3 @@ func (v Vulnerability) getBaseScore() float64 {
 
 	return 0
 }
-
