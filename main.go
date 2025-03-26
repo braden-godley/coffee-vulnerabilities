@@ -9,6 +9,8 @@ import (
     "encoding/json"
 )
 
+const ScoreThreshold = 5.0
+
 type CVEResponse struct {
     TotalResults int `json:"totalResults"`
     Vulnerabilities []Vulnerability `json:"vulnerabilities"`
@@ -52,6 +54,11 @@ func main() {
     log.Printf("Received %d CVEs", len(vulns.Vulnerabilities))
 
     for _, v := range vulns.Vulnerabilities {
+        // Skip vulns that don't meet the threshold
+        if score := v.getBaseScore(); score < ScoreThreshold {
+            continue
+        }
+
         log.Printf("Id: %s", v.Cve.Id)
         for _, desc := range v.Cve.Descriptions {
             if desc.Lang == "en" {
