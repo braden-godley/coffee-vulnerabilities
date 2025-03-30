@@ -15,6 +15,8 @@ import (
 	godotenv "github.com/joho/godotenv"
 	"github.com/samber/lo"
 	openai "github.com/sashabaranov/go-openai"
+	terminal "github.com/terminaldotshop/terminal-sdk-go"
+	"github.com/terminaldotshop/terminal-sdk-go/option"
 )
 
 const ScoreThreshold = 9.0
@@ -61,12 +63,18 @@ type ChatResponse struct {
 		City           string `xml:"city,attr"`
 		State          string `xml:"state,attr"`
 		Zip            string `xml:"zip,attr"`
+		Country        string `xml:"country,attr"`
 	} `xml:"company"`
 }
 
 func main() {
-	log.SetPrefix("coffee: ")
+	log.SetPrefix("coffee-vulns: ")
 	log.SetFlags(0)
+
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	vulns, err := getVulnerabilities()
 	if err != nil {
@@ -81,20 +89,91 @@ func main() {
 
 	for _, v := range critical {
 		log.Printf("Id: %s", v.Cve.Id)
-		if desc, ok := lo.Find(v.Cve.Descriptions, func(desc Description) bool {
-			return desc.Lang == "en"
-		}); ok {
-			log.Printf("Description: %s", desc.Value)
-		}
-		resp, err := v.getChatResponse()
+		err := v.handleVulnerability()
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println(resp)
 		log.Println("")
 	}
 
 	log.Printf("Found %d/%d CVEs with score at least %f", len(critical), len(vulns.Vulnerabilities), ScoreThreshold)
+}
+
+func (v Vulnerability) handleVulnerability() error {
+	resp, err := v.getChatResponse()
+	if err != nil {
+		return err
+	}
+
+	log.Println(resp)
+
+	apiKey, err := getTerminalApiKey()
+	if err != nil {
+		return err
+	}
+
+	client := terminal.NewClient(
+		option.WithBearerToken(apiKey),
+		option.WithBaseURL("https://api.dev.terminal.shop/"),
+	)
+
+	products, err := client.Product.List(context.TODO())
+	if err != nil {
+		return err
+	}
+
+	possibleProducts := lo.Filter(products.Data, func(product terminal.Product, _ int) bool {
+		return product.Name != "404" && // Don't send them decaf, they need caffeine!
+			product.Subscription != terminal.ProductSubscriptionRequired // Can't send them a subscription.
+	})
+
+	randomProduct := lo.Sample(possibleProducts)
+
+	log.Println("Chose randomly:", randomProduct.Name)
+
+	addressResponse, err := client.Address.New(
+		context.TODO(),
+		terminal.AddressNewParams{
+			Name:     terminal.F(resp.Company.Name),
+			Street1:  terminal.F(resp.Company.Address),
+			Street2:  terminal.F(resp.Company.AddressLineTwo),
+			City:     terminal.F(resp.Company.City),
+			Province: terminal.F(resp.Company.State),
+			Country:  terminal.F(resp.Company.Country),
+			Zip:      terminal.F(resp.Company.Zip),
+		},
+	)
+	if err != nil {
+		return err
+	}
+	addressId := addressResponse.Data
+
+	cardResponse, err := client.Card.New(
+		context.TODO(),
+		terminal.CardNewParams{
+			Token: terminal.F("tok_1N3T00LkdIwHu7ixt44h1F8k"),
+		},
+	)
+	if err != nil {
+		return err
+	}
+	cardId := cardResponse.Data
+
+	orderResponse, err := client.Order.New(
+		context.TODO(),
+		terminal.OrderNewParams{
+			CardID:    terminal.F(cardId),
+			AddressID: terminal.F(addressId),
+		},
+	)
+	if err != nil {
+		return err
+	}
+
+	log.Println("Ordered")
+	log.Println(orderResponse)
+
+	return nil
 }
 
 func getVulnerabilities() (*CVEResponse, error) {
@@ -157,7 +236,7 @@ func (v Vulnerability) getDescription() (string, error) {
 }
 
 func (v Vulnerability) getChatResponse() (*ChatResponse, error) {
-	apiKey, err := getApiKey()
+	apiKey, err := getOpenAIApiKey()
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +267,7 @@ func (v Vulnerability) getChatResponse() (*ChatResponse, error) {
                 - Flickr: The photo-sharing platform is another example of a site that uses PHP.
                 Facebook is probably the largest company, so I'll give that as my response.
             </thinking>
-            <company name="Facebook" address="1 Hacker Way" addressLineTwo="" city="Menlo Park" state="CA" zip="94025"></company>
+            <company name="Facebook" address="1 Hacker Way" addressLineTwo="" city="Menlo Park" state="CA" country="US" zip="94025"></company>
         </response>
 
         Here is the vulnerability description: %s
@@ -221,12 +300,18 @@ func (v Vulnerability) getChatResponse() (*ChatResponse, error) {
 	return &response, nil
 }
 
-func getApiKey() (string, error) {
-	err := godotenv.Load()
-	if err != nil {
-		return "", err
-	}
-
+func getOpenAIApiKey() (string, error) {
 	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		return "", errors.New("invalid api key")
+	}
+	return apiKey, nil
+}
+
+func getTerminalApiKey() (string, error) {
+	apiKey := os.Getenv("TERMINAL_BEARER_TOKEN")
+	if apiKey == "" {
+		return "", errors.New("invalid api key")
+	}
 	return apiKey, nil
 }
