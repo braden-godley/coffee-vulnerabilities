@@ -9,10 +9,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
+	godotenv "github.com/joho/godotenv"
 	"github.com/samber/lo"
-    godotenv "github.com/joho/godotenv"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -51,6 +52,18 @@ type Description struct {
 	Value string `json:"value"`
 }
 
+type ChatResponse struct {
+	Thinking string `xml:"thinking"`
+	Company  struct {
+		Name           string `xml:"name,attr"`
+		Address        string `xml:"address,attr"`
+		AddressLineTwo string `xml:"addressLineTwo,attr"`
+		City           string `xml:"city,attr"`
+		State          string `xml:"state,attr"`
+		Zip            string `xml:"zip,attr"`
+	} `xml:"company"`
+}
+
 func main() {
 	log.SetPrefix("coffee: ")
 	log.SetFlags(0)
@@ -73,7 +86,11 @@ func main() {
 		}); ok {
 			log.Printf("Description: %s", desc.Value)
 		}
-		v.getCompaniesAffected()
+		resp, err := v.getChatResponse()
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Println(resp)
 		log.Println("")
 	}
 
@@ -82,7 +99,7 @@ func main() {
 
 func getVulnerabilities() (*CVEResponse, error) {
 	end := time.Now()
-	start := end.Add(-24 * time.Hour)
+	start := end.Add(-30 * time.Hour)
 
 	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0/?noRejected&pubStartDate=%v&pubEndDate=%v", start.Format(time.RFC3339), end.Format(time.RFC3339))
 
@@ -139,8 +156,12 @@ func (v Vulnerability) getDescription() (string, error) {
 	}
 }
 
-func (v Vulnerability) getCompaniesAffected() ([]string, error) {
-	client := openai.NewClient("")
+func (v Vulnerability) getChatResponse() (*ChatResponse, error) {
+	apiKey, err := getApiKey()
+	if err != nil {
+		return nil, err
+	}
+	client := openai.NewClient(apiKey)
 
 	desc, err := v.getDescription()
 	if err != nil {
@@ -173,7 +194,7 @@ func (v Vulnerability) getCompaniesAffected() ([]string, error) {
         Here is the vulnerability description: %s
     `, desc)
 
-	resp, err := client.CreateChatCompletion(
+	chat, err := client.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
 			Model: openai.GPT4oMini,
@@ -189,12 +210,23 @@ func (v Vulnerability) getCompaniesAffected() ([]string, error) {
 		return nil, err
 	}
 
-	log.Println("Response")
-	log.Println(resp.Choices[0].Message.Content)
+	content := chat.Choices[0].Message.Content
 
-	return []string{}, nil
+	var response ChatResponse
+	err = xml.Unmarshal([]byte(content), &response)
+	if err != nil {
+		return nil, err
+	}
+
+	return &response, nil
 }
 
-func getApiKey() string, error {
-    
+func getApiKey() (string, error) {
+	err := godotenv.Load()
+	if err != nil {
+		return "", err
+	}
+
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	return apiKey, nil
 }
