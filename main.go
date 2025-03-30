@@ -151,19 +151,40 @@ func (v Vulnerability) handleVulnerability() error {
 	cardResponse, err := client.Card.New(
 		context.TODO(),
 		terminal.CardNewParams{
-			Token: terminal.F("tok_1N3T00LkdIwHu7ixt44h1F8k"),
+			Token: terminal.F("tok_visa"), // For testing, just use this token provided by Stripe
 		},
 	)
+
+	var cardId string
+
 	if err != nil {
-		return err
+		cardsResponse, err2 := client.Card.List(
+			context.TODO(),
+		)
+
+		if err2 != nil {
+			return err2
+		}
+
+		if len(cardsResponse.Data) == 0 {
+			return err
+		}
+
+		cardId = cardsResponse.Data[0].ID
+	} else {
+		cardId = cardResponse.Data
 	}
-	cardId := cardResponse.Data
+
+	variantId := randomProduct.Variants[0].ID
 
 	orderResponse, err := client.Order.New(
 		context.TODO(),
 		terminal.OrderNewParams{
 			CardID:    terminal.F(cardId),
 			AddressID: terminal.F(addressId),
+			Variants: terminal.F(map[string]int64{
+				variantId: 1,
+			}),
 		},
 	)
 	if err != nil {
