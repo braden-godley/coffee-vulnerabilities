@@ -19,7 +19,7 @@ import (
 	"github.com/terminaldotshop/terminal-sdk-go/option"
 )
 
-const ScoreThreshold = 5.0
+const ScoreThreshold = 9.0
 
 type CVEResponse struct {
 	TotalResults    int             `json:"totalResults"`
