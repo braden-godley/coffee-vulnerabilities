@@ -19,7 +19,7 @@ import (
 	"github.com/terminaldotshop/terminal-sdk-go/option"
 )
 
-const ScoreThreshold = 9.0
+const ScoreThreshold = 5.0
 
 type CVEResponse struct {
 	TotalResults    int             `json:"totalResults"`
@@ -68,7 +68,6 @@ type ChatResponse struct {
 }
 
 func main() {
-	log.SetPrefix("coffee-vulns: ")
 	log.SetFlags(0)
 
 	err := godotenv.Load()
@@ -199,7 +198,7 @@ func (v Vulnerability) handleVulnerability() error {
 
 func getVulnerabilities() (*CVEResponse, error) {
 	end := time.Now()
-	start := end.Add(-30 * time.Hour)
+	start := end.Add(-24 * time.Hour)
 
 	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0/?noRejected&pubStartDate=%v&pubEndDate=%v", start.Format(time.RFC3339), end.Format(time.RFC3339))
 
@@ -293,6 +292,8 @@ func (v Vulnerability) getChatResponse() (*ChatResponse, error) {
 
         Here is the vulnerability description: %s
     `, desc)
+
+	log.Println("Description:", desc)
 
 	chat, err := client.CreateChatCompletion(
 		context.Background(),
